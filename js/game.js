@@ -12,6 +12,9 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
+// WICHTIG: Die Kamera muss alle Ebenen sehen können.
+camera.layers.enableAll();
+
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -39,15 +42,13 @@ const instructions = document.getElementById('instructions');
 const currentAmmoElement = document.getElementById('current-ammo');
 const magazineCountElement = document.getElementById('magazine-count');
 
-// --- Event Listener für Steuerung und Input ---
+// --- Event Listener ---
 instructions.addEventListener('click', () => { if (isWorldReady) controls.lock(); });
 controls.addEventListener('unlock', () => blocker.style.display = 'block');
 controls.addEventListener('lock', () => blocker.style.display = 'none');
-
 const keys = {};
 document.addEventListener('keydown', (e) => (keys[e.code] = true));
 document.addEventListener('keyup', (e) => (keys[e.code] = false));
-
 window.addEventListener('mousedown', (e) => {
     if (e.button === 0) isShooting = true;
     if (e.button === 2) isAiming = true;
@@ -58,32 +59,28 @@ window.addEventListener('mouseup', (e) => {
 });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-// --- Physik- und Gameplay-Konstanten ---
+// --- Gameplay-Konstanten & Variablen ---
 const playerSpeed = 5.0;
 const playerHeight = 1.5;
 const gravity = 9.81;
 const jumpStrength = 6.0;
-
-// --- Gameplay-Variablen ---
 const playerVelocity = new THREE.Vector3();
 const groundRaycaster = new THREE.Raycaster();
 const wallRaycaster = new THREE.Raycaster();
 let worldObjects = [];
 let isWorldReady = false;
-let weapon, muzzleFlash;
+let weapon, muzzleFlash, muzzleFlashSprite;
 
-// --- Zielen (ADS) ---
+// --- Waffen-Variablen ---
 let isAiming = false;
 const hipFirePosition = new THREE.Vector3(0.1, -0.1, -0.1);
 const adsPosition = new THREE.Vector3(0, -0.04, -0.06);
 const normalFov = 75;
 const adsFov = 60;
-
-// --- Waffenbewegung (Sway) ---
 const swayAmplitude = new THREE.Vector2(0.005, 0.008);
 const swayFrequency = 7.0;
 
-// --- Munition, Schießen und Nachladen ---
+// --- Schuss-Variablen ---
 let currentAmmo = 30;
 let magazines = 6;
 const maxAmmo = 30;
@@ -97,10 +94,10 @@ const recoilRotationAmount = new THREE.Euler(0.1, 0, 0);
 let currentRecoilRotation = new THREE.Euler();
 const recoilRecoverySpeed = 25;
 
-// --- KORREKTUR: Variablen für die Animationen ---
+// --- Animations-Variablen ---
 let animationMixer;
 let reloadAction;
-let shootAction; // Umbenannt von recoilAction zu shootAction
+let shootAction;
 
 // =================================================================
 // === 4. MODELLE LADEN & SPIEL STARTEN ===
@@ -111,7 +108,13 @@ instructions.querySelector('p').textContent = 'Welt wird geladen...';
 
 loader.load('assets/welt1.glb', (gltf) => {
     scene.add(gltf.scene);
-    gltf.scene.traverse((child) => { if (child.isMesh) worldObjects.push(child); });
+    gltf.scene.traverse((child) => {
+        if (child.isMesh) {
+            worldObjects.push(child);
+            // Die Welt ist auf Ebene 0
+            child.layers.set(0);
+        }
+    });
     const spawnRaycaster = new THREE.Raycaster(new THREE.Vector3(0, 100, 0), new THREE.Vector3(0, -1, 0));
     const spawnIntersects = spawnRaycaster.intersectObjects(worldObjects);
     if (spawnIntersects.length > 0) {
@@ -126,33 +129,51 @@ loader.load('assets/welt1.glb', (gltf) => {
 
 loader.load('assets/waffe.glb', (gltf) => {
     weapon = gltf.scene;
+
+    // NEU: Setze die Waffe und alle ihre Teile auf Ebene 1
+    weapon.traverse((child) => {
+        child.layers.set(1);
+    });
+
     weapon.position.copy(hipFirePosition);
     weapon.scale.set(0.4, 0.4, 0.4);
     camera.add(weapon);
 
-    muzzleFlash = new THREE.PointLight(0xfff5a1, 5, 1, 2);
-    muzzleFlash.position.set(0, 0.1, -0.5);
+    // KORREKTUR: Das Licht leuchtet NUR auf Ebene 0 (die Welt) und ignoriert die Waffe
+    muzzleFlash = new THREE.PointLight(0xfff5a1, 5, 2, 2); // Stärkere Intensität für die Welt
+    muzzleFlash.layers.set(0); // WICHTIG!
+    muzzleFlash.position.set(0, 0.08, -0.55);
     muzzleFlash.visible = false;
     weapon.add(muzzleFlash);
 
-    // --- KORREKTUR: Animation Mixer und Clips anhand deiner NAMEN vorbereiten ---
+    // Der sichtbare Blitz (Sprite), der nur auf Ebene 1 (der Waffen-Ebene) zu sehen ist
+    const muzzleFlashTexture = new THREE.TextureLoader().load('assets/muzzleflash.png');
+    const muzzleFlashMaterial = new THREE.MeshBasicMaterial({
+        map: muzzleFlashTexture,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false
+    });
+    const muzzleFlashGeometry = new THREE.PlaneGeometry(0.2, 0.2);
+    muzzleFlashSprite = new THREE.Mesh(muzzleFlashGeometry, muzzleFlashMaterial);
+    muzzleFlashSprite.position.copy(muzzleFlash.position);
+    muzzleFlashSprite.layers.set(1); // WICHTIG!
+    muzzleFlashSprite.visible = false;
+    weapon.add(muzzleFlashSprite);
+
+    // Animation Mixer vorbereiten
     animationMixer = new THREE.AnimationMixer(weapon);
-    
-    // Suche die Nachlade-Animation mit dem Namen "nachladen"
     const reloadClip = THREE.AnimationClip.findByName(gltf.animations, 'nachladen');
     if (reloadClip) {
         reloadAction = animationMixer.clipAction(reloadClip);
         reloadAction.setLoop(THREE.LoopOnce);
         reloadAction.clampWhenFinished = true;
     }
-
-    // Suche die Schuss-Animation mit dem Namen "schiessen"
     const shootClip = THREE.AnimationClip.findByName(gltf.animations, 'schiessen');
     if (shootClip) {
         shootAction = animationMixer.clipAction(shootClip);
         shootAction.setLoop(THREE.LoopOnce);
     }
-
 }, undefined, (error) => console.error(error));
 
 // =================================================================
@@ -212,10 +233,16 @@ function animate() {
             updateHud();
             currentRecoilPosition.add(recoilAmount);
             currentRecoilRotation.x += recoilRotationAmount.x;
+            
+            // Mündungsfeuer-Effekte aktivieren
             muzzleFlash.visible = true;
-            setTimeout(() => { muzzleFlash.visible = false; }, 25);
+            if (muzzleFlashSprite) muzzleFlashSprite.visible = true;
+            
+            setTimeout(() => {
+                muzzleFlash.visible = false;
+                if (muzzleFlashSprite) muzzleFlashSprite.visible = false;
+            }, 25);
 
-            // KORREKTUR: Spiele die "schiessen"-Animation ab
             if (shootAction) {
                 shootAction.reset().play();
             }
