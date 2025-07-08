@@ -1,21 +1,30 @@
 <!DOCTYPE html>
 <html lang="de">
+
 <head>
     <meta charset="UTF-8">
     <title>Mein Ego-Shooter</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
+
 <body>
     <div id="blocker">
         <div id="instructions">
             <p style="font-size:36px">Klick zum Spielen</p>
             <p>
-                W, A, S, D = Bewegen<br/>
+                W, A, S, D = Bewegen<br />
                 Maus = Umschauen
             </p>
         </div>
     </div>
-    
+    <div id="hud">
+        <div class="crosshair">+</div>
+
+        <div id="ammo-container">
+            <span id="current-ammo">30</span> / <span id="magazine-count">6</span>
+        </div>
+    </div>
+
     <script type="importmap">
         {
             "imports": {
@@ -27,4 +36,5 @@
 
     <script type="module" src="js/game.js"></script>
 </body>
+
 </html>

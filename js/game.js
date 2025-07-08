@@ -6,18 +6,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
 // =================================================================
-// === 1. SZENE, KAMERA UND RENDERER (DAS GRUNDGERÜST) ===
+// === 1. SZENE, KAMERA UND RENDERER ===
 // =================================================================
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-
-// Die Kamera ist das "Auge" des Spielers.
-// PerspectiveCamera(Blickwinkel, Seitenverhältnis, Nahe Ebene, Ferne Ebene)
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
-// HINWEIS: Die alte Startposition hier ist nicht mehr so wichtig, da wir sie später überschreiben.
-// camera.position.set(0, 10, 5);
-
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -39,15 +33,14 @@ scene.add(directionalLight);
 const controls = new PointerLockControls(camera, document.body);
 scene.add(controls.getObject());
 
+// --- HTML Elemente ---
 const blocker = document.getElementById('blocker');
 const instructions = document.getElementById('instructions');
+const currentAmmoElement = document.getElementById('current-ammo');
+const magazineCountElement = document.getElementById('magazine-count');
 
-instructions.addEventListener('click', () => {
-    if (isWorldReady) {
-        controls.lock();
-    }
-});
-
+// --- Event Listener für Steuerung und Input ---
+instructions.addEventListener('click', () => { if (isWorldReady) controls.lock(); });
 controls.addEventListener('unlock', () => blocker.style.display = 'block');
 controls.addEventListener('lock', () => blocker.style.display = 'none');
 
@@ -55,93 +48,62 @@ const keys = {};
 document.addEventListener('keydown', (e) => (keys[e.code] = true));
 document.addEventListener('keyup', (e) => (keys[e.code] = false));
 
-// NEU: Rechtsklick zum Zielen (Aim Down Sights)
-// Hier wird die Variable isAiming gesetzt, wenn der Spieler die rechte Maustaste drückt oder loslässt.
-// Diese Variable wird später verwendet, um die Waffenposition und das Sichtfeld anzupassen.
 window.addEventListener('mousedown', (e) => {
-    // Prüft, ob die rechte Maustaste gedrückt wurde (Button-Code 2).
-    if (e.button === 2) {
-        isAiming = true;
-    }
+    if (e.button === 0) isShooting = true;
+    if (e.button === 2) isAiming = true;
 });
-
 window.addEventListener('mouseup', (e) => {
-    // Prüft, ob die rechte Maustaste losgelassen wurde.
-    if (e.button === 2) {
-        isAiming = false;
-    }
+    if (e.button === 0) isShooting = false;
+    if (e.button === 2) isAiming = false;
 });
-
-// NEU: Verhindert, dass das Kontextmenü bei Rechtsklick erscheint.
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-
-
+// --- Physik- und Gameplay-Konstanten ---
 const playerSpeed = 5.0;
 const playerHeight = 1.5;
 const gravity = 9.81;
 const jumpStrength = 6.0;
 
-
+// --- Gameplay-Variablen ---
 const playerVelocity = new THREE.Vector3();
 const groundRaycaster = new THREE.Raycaster();
 const wallRaycaster = new THREE.Raycaster();
-
 let worldObjects = [];
 let isWorldReady = false;
+let weapon, muzzleFlash;
 
-// Variablen für das Zielen (Aim Down Sights)
-let isAiming = false; // Speichert, ob der Spieler gerade zielt.
-/*
-====================================================================================
-=== WAFFENPOSITIONEN FÜR HÜFTE (HIP-FIRE) UND ZIELEN (ADS) ===
-====================================================================================
- 
-Hier definieren wir die exakte 3D-Position der Waffe relativ zur Kamera.
-Wir benutzen dafür einen `THREE.Vector3`, der drei Werte entgegennimmt: (x, y, z).
- 
-Stell dir das Koordinatensystem aus der Sicht deiner Kamera vor:
- 
-  +Y (nach oben)
-   |
-   |
-   +-----> +X (nach rechts)
-  /
- /
-+Z (auf dich zu, aus dem Bildschirm heraus)
- 
-Das bedeutet:
-- X-Achse: Steuert die Links/Rechts-Position.
-    -> Ein positiver Wert (z.B. 0.1) schiebt die Waffe nach RECHTS.
-    -> Ein negativer Wert (z.B. -0.1) schiebt die Waffe nach LINKS.
-    -> 0 bedeutet perfekt in der Mitte.
- 
-- Y-Achse: Steuert die Hoch/Runter-Position.
-    -> Ein positiver Wert (z.B. 0.1) schiebt die Waffe nach OBEN.
-    -> Ein negativer Wert (z.B. -0.1) schiebt die Waffe nach UNTEN.
-    -> 0 bedeutet auf der exakten vertikalen Höhe der Kamera.
- 
-- Z-Achse: Steuert die Vor/Zurück-Position (Tiefe).
-    -> Ein negativer Wert (z.B. -0.1) schiebt die Waffe von dir WEG (in den Bildschirm hinein).
-    -> Ein positiver Wert (z.B. 0.1) schiebt die Waffe auf dich ZU (näher an dein "Gesicht").
-*/
-
-// Normale Waffenposition aus der Hüfte.
-// x=0.1  -> Leicht nach rechts versetzt.
-// y=-0.1 -> Leicht nach unten versetzt.
-// z=-0.1 -> Ein kleines Stück vor der Kamera.
+// --- Zielen (ADS) ---
+let isAiming = false;
 const hipFirePosition = new THREE.Vector3(0.1, -0.1, -0.1);
+const adsPosition = new THREE.Vector3(0, -0.04, -0.06);
+const normalFov = 75;
+const adsFov = 60;
 
-// Waffenposition beim Zielen durch Kimme und Korn.
-// x=0    -> Perfekt horizontal zentriert, damit du über die Visiereinrichtung schaust.
-// y=0    -> Perfekt vertikal zentriert. (Musst du evtl. leicht anpassen, damit die Visiereinrichtung genau auf Augenhöhe ist).
-// z=-0.1 -> Ein kleines Stück vor der Kamera. (Ein kleinerer Wert wie -0.4 würde sie näher heranholen).
-const adsPosition = new THREE.Vector3(0, -0.054, -0.06);
+// --- Waffenbewegung (Sway) ---
+const swayAmplitude = new THREE.Vector2(0.005, 0.008);
+const swayFrequency = 7.0;
 
-const normalFov = 75; // Normales Sichtfeld
-const adsFov = 60;    // Sichtfeld beim Zielen (erzeugt den Zoom-Effekt)
+// --- Munition, Schießen und Nachladen ---
+let currentAmmo = 30;
+let magazines = 6;
+const maxAmmo = 30;
+let isShooting = false;
+let isReloading = false;
+const fireRate = 10;
+let lastShotTime = 0;
+const recoilAmount = new THREE.Vector3(0, 0.01, 0.03);
+let currentRecoilPosition = new THREE.Vector3();
+const recoilRotationAmount = new THREE.Euler(0.1, 0, 0);
+let currentRecoilRotation = new THREE.Euler();
+const recoilRecoverySpeed = 25;
+
+// --- KORREKTUR: Variablen für die Animationen ---
+let animationMixer;
+let reloadAction;
+let shootAction; // Umbenannt von recoilAction zu shootAction
+
 // =================================================================
-// === 4. MODELLE LADEN ===
+// === 4. MODELLE LADEN & SPIEL STARTEN ===
 // =================================================================
 
 const loader = new GLTFLoader();
@@ -149,63 +111,62 @@ instructions.querySelector('p').textContent = 'Welt wird geladen...';
 
 loader.load('assets/welt1.glb', (gltf) => {
     scene.add(gltf.scene);
-    gltf.scene.traverse((child) => {
-        if (child.isMesh) {
-            worldObjects.push(child);
-        }
-    });
-
-    // =======================================================================
-    // === NEU: Sicherer Startpunkt für den Spieler ===
-    // =======================================================================
-    // Nachdem die Welt geladen ist, suchen wir den Boden und platzieren den Spieler korrekt.
-    // So vermeiden wir, dass der Spieler durch die Welt fällt.
-
-    // 1. Wir definieren einen Punkt hoch über dem Zentrum der Welt.
-    const spawnCheckPoint = new THREE.Vector3(0, 100, 0); // Start bei x=0, z=0, aber 100m hoch.
-
-    // 2. Wir schießen einen Raycaster von diesem Punkt nach unten.
-    const spawnRaycaster = new THREE.Raycaster(spawnCheckPoint, new THREE.Vector3(0, -1, 0));
+    gltf.scene.traverse((child) => { if (child.isMesh) worldObjects.push(child); });
+    const spawnRaycaster = new THREE.Raycaster(new THREE.Vector3(0, 100, 0), new THREE.Vector3(0, -1, 0));
     const spawnIntersects = spawnRaycaster.intersectObjects(worldObjects);
-
-    // 3. Wenn wir den Boden gefunden haben, setzen wir die Startposition des Spielers.
     if (spawnIntersects.length > 0) {
-        const groundPoint = spawnIntersects[0].point;
-        // Die Position des Spielers ist die des Bodens + seine Augenhöhe.
-        controls.getObject().position.set(groundPoint.x, groundPoint.y + playerHeight, groundPoint.z);
+        const p = spawnIntersects[0].point;
+        controls.getObject().position.set(p.x, p.y + playerHeight, p.z);
     } else {
-        // Fallback, falls absolut kein Boden gefunden wird (z.B. leeres Modell).
-        // Setzt den Spieler einfach auf eine Standardhöhe.
         controls.getObject().position.set(0, playerHeight, 0);
-        console.warn("Konnte keinen sicheren Startpunkt auf dem Boden finden. Spieler startet bei (0, playerHeight, 0).");
     }
-
-    // Jetzt, wo der Spieler sicher platziert ist, kann das Spiel beginnen.
     isWorldReady = true;
     instructions.querySelector('p').textContent = 'Klick zum Spielen';
+}, undefined, (error) => console.error(error));
+
+loader.load('assets/waffe.glb', (gltf) => {
+    weapon = gltf.scene;
+    weapon.position.copy(hipFirePosition);
+    weapon.scale.set(0.4, 0.4, 0.4);
+    camera.add(weapon);
+
+    muzzleFlash = new THREE.PointLight(0xfff5a1, 5, 1, 2);
+    muzzleFlash.position.set(0, 0.1, -0.5);
+    muzzleFlash.visible = false;
+    weapon.add(muzzleFlash);
+
+    // --- KORREKTUR: Animation Mixer und Clips anhand deiner NAMEN vorbereiten ---
+    animationMixer = new THREE.AnimationMixer(weapon);
+    
+    // Suche die Nachlade-Animation mit dem Namen "nachladen"
+    const reloadClip = THREE.AnimationClip.findByName(gltf.animations, 'nachladen');
+    if (reloadClip) {
+        reloadAction = animationMixer.clipAction(reloadClip);
+        reloadAction.setLoop(THREE.LoopOnce);
+        reloadAction.clampWhenFinished = true;
+    }
+
+    // Suche die Schuss-Animation mit dem Namen "schiessen"
+    const shootClip = THREE.AnimationClip.findByName(gltf.animations, 'schiessen');
+    if (shootClip) {
+        shootAction = animationMixer.clipAction(shootClip);
+        shootAction.setLoop(THREE.LoopOnce);
+    }
 
 }, undefined, (error) => console.error(error));
 
+// =================================================================
+// === 5. HELFER-FUNKTIONEN ===
+// =================================================================
 
-// Lädt das Waffen-Modell.
-loader.load('assets/waffe.glb', (gltf) => {
-    // Hol die Waffe aus der gltf-Datei. WICHTIG: Wir müssen die globale `weapon` Variable setzen.
-    weapon = gltf.scene;
-
-    // Setze die Startposition auf die definierte hipFirePosition.
-    weapon.position.copy(hipFirePosition);
-
-    const weaponScale = 0.4;
-    weapon.scale.set(weaponScale, weaponScale, weaponScale);
-    camera.add(weapon);
-}, undefined, (error) => console.error('Fehler beim Laden der Waffe:', error));
-
-// Und deklariere die `weapon` Variable ganz oben bei den anderen, damit sie global verfügbar ist.
-let weapon; // z.B. unter `let isWorldReady = false;`
-
+function updateHud() {
+    currentAmmoElement.textContent = currentAmmo;
+    magazineCountElement.textContent = magazines;
+}
+updateHud();
 
 // =================================================================
-// === 5. DER GAME-LOOP (ANIMATE-FUNKTION) ===
+// === 6. DER GAME-LOOP (ANIMATE-FUNKTION) ===
 // =================================================================
 
 const clock = new THREE.Clock();
@@ -214,76 +175,92 @@ let onGround = false;
 function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
+    const time = clock.getElapsedTime();
 
-    if (isWorldReady && controls.isLocked) {
+    if (animationMixer) {
+        animationMixer.update(delta);
+    }
 
-        // --- 1. Schwerkraft und Boden-Check ---
+    if (isWorldReady && weapon && controls.isLocked) {
+
+        // --- A. BEWEGUNG & PHYSIK ---
         groundRaycaster.set(controls.getObject().position, new THREE.Vector3(0, -1, 0));
         const groundIntersects = groundRaycaster.intersectObjects(worldObjects);
         onGround = groundIntersects.length > 0 && groundIntersects[0].distance < playerHeight / 2 + 0.1;
-
-        if (!onGround) {
-            playerVelocity.y -= gravity * delta;
-        } else {
-            playerVelocity.y = 0;
-            // Diese Zeile lassen wir so, damit du weiter klettern kannst!
-            controls.getObject().position.y = groundIntersects[0].point.y + playerHeight / 2;
-        }
-
-        // --- Sprung-Logik ---
-        if (keys['Space'] && onGround) {
-            // Gibt dem Spieler einen vertikalen Geschwindigkeitsschub.
-            playerVelocity.y = jumpStrength;
-        }
-
-        // --- B. HORIZONTALE BEWEGUNG (LAUFEN) ---
-        const playerDirection = new THREE.Vector3();
-        playerDirection.z = Number(keys['KeyS']) - Number(keys['KeyW']);
-        playerDirection.x = Number(keys['KeyD']) - Number(keys['KeyA']);
-        playerDirection.normalize();
-
-        const moveSpeed = playerSpeed * delta;
-        const moveVector = new THREE.Vector3(playerDirection.x * moveSpeed, 0, playerDirection.z * moveSpeed);
-        moveVector.applyQuaternion(controls.getObject().quaternion);
-
-        // --- C. WAND-KOLLISION ---
-        if (moveVector.lengthSq() > 0) {
+        if (keys['Space'] && onGround) playerVelocity.y = jumpStrength;
+        const playerDirection = new THREE.Vector3(Number(keys['KeyD']) - Number(keys['KeyA']), 0, Number(keys['KeyS']) - Number(keys['KeyW']));
+        const isMoving = playerDirection.lengthSq() > 0;
+        playerDirection.normalize().applyQuaternion(controls.getObject().quaternion);
+        const currentSpeed = isAiming ? playerSpeed / 2 : playerSpeed;
+        const moveVector = playerDirection.multiplyScalar(currentSpeed * delta);
+        if (isMoving) {
             wallRaycaster.set(controls.getObject().position, moveVector.clone().normalize());
             const wallIntersects = wallRaycaster.intersectObjects(worldObjects);
-
             if (wallIntersects.length === 0 || wallIntersects[0].distance > 0.8) {
                 controls.getObject().position.add(moveVector);
             }
         }
-
-        // --- D. FINALE BEWEGUNG ANWENDEN ---
+        if (!onGround) playerVelocity.y -= gravity * delta;
+        else if (playerVelocity.y < 0) playerVelocity.y = 0;
         controls.getObject().position.y += playerVelocity.y * delta;
+        if (onGround && playerVelocity.y <= 0) controls.getObject().position.y = groundIntersects[0].point.y + playerHeight / 2;
 
+        // --- B. SCHIESSEN & NACHLADEN ---
+        if (isShooting && !isReloading && currentAmmo > 0 && time > lastShotTime + 1 / fireRate) {
+            lastShotTime = time;
+            currentAmmo--;
+            updateHud();
+            currentRecoilPosition.add(recoilAmount);
+            currentRecoilRotation.x += recoilRotationAmount.x;
+            muzzleFlash.visible = true;
+            setTimeout(() => { muzzleFlash.visible = false; }, 25);
 
-        // --- G. ZIELEN (Aim Down Sights) ---
-        const aimSpeed = delta * 10; // Geschwindigkeit der Ziel-Animation
+            // KORREKTUR: Spiele die "schiessen"-Animation ab
+            if (shootAction) {
+                shootAction.reset().play();
+            }
+        }
 
-        // Wähle die Ziel-Position basierend auf dem `isAiming`-Zustand.
-        const targetWeaponPosition = isAiming ? adsPosition : hipFirePosition;
-        // Wähle das Ziel-Sichtfeld (FOV).
+        if (keys['KeyR'] && !isReloading && magazines > 0 && currentAmmo < maxAmmo) {
+            isReloading = true;
+            if (reloadAction) {
+                reloadAction.reset().play();
+                const animationDuration = reloadAction.getClip().duration * 1000;
+                setTimeout(() => {
+                    magazines--;
+                    currentAmmo = maxAmmo;
+                    updateHud();
+                    isReloading = false;
+                }, animationDuration);
+            } else {
+                isReloading = false; 
+            }
+        }
+
+        // --- C. VISUELLE EFFEKTE (WAFFE & KAMERA) ---
+        const aimSpeed = delta * 10;
+        let targetWeaponPosition = isAiming ? adsPosition.clone() : hipFirePosition.clone();
         const targetFov = isAiming ? adsFov : normalFov;
-
-        // Bewege die Waffe sanft zur Ziel-Position (Lineare Interpolation).
+        currentRecoilPosition.lerp(new THREE.Vector3(), delta * recoilRecoverySpeed);
+        currentRecoilRotation.x = THREE.MathUtils.lerp(currentRecoilRotation.x, 0, delta * recoilRecoverySpeed);
+        targetWeaponPosition.add(currentRecoilPosition);
+        if (isMoving && onGround) {
+            const swayMultiplier = isAiming ? 0.3 : 1.0;
+            const swayX = Math.sin(time * swayFrequency) * swayAmplitude.x * swayMultiplier;
+            const swayY = Math.abs(Math.sin(time * swayFrequency)) * swayAmplitude.y * swayMultiplier;
+            targetWeaponPosition.add(new THREE.Vector3(swayX, swayY, 0));
+        }
         weapon.position.lerp(targetWeaponPosition, aimSpeed);
-
-        // Passe das Sichtfeld der Kamera sanft an.
+        weapon.rotation.set(currentRecoilRotation.x, currentRecoilRotation.y, currentRecoilRotation.z);
         camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, aimSpeed);
-        // WICHTIG: Nach jeder FOV-Änderung muss die Projektionsmatrix der Kamera aktualisiert werden.
         camera.updateProjectionMatrix();
-
-    } // Ende von if (isWorldReady && controls.isLocked)
-
+    }
 
     renderer.render(scene, camera);
 }
 
 // =================================================================
-// === 6. FENSTERGRÖSSE ANPASSEN ===
+// === 7. FENSTERGRÖSSE ANPASSEN & START ===
 // =================================================================
 
 window.addEventListener('resize', () => {
