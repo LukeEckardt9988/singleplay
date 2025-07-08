@@ -1,32 +1,167 @@
+/* css/style.css */
+
+/* Import einer passenden Pixel-Schriftart von Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+/* Grundlegende Styles für die Seite */
 body {
     margin: 0;
-    padding: 0;
-    overflow: hidden;
-    font-family: Arial, sans-serif;
-    color: white;
+    font-family: 'VT323', monospace; /* Angewendete Pixel-Schriftart */
+    color: #E0E0E0; /* Leichtes Grau-Weiß für Text */
+    overflow: hidden; /* Verhindert Scrollbalken */
+    text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.7); /* Scharfer Schatten für Pixel-Look */
 }
 
-canvas {
-    display: block;
-}
-
+/* Overlay für den Startbildschirm */
 #blocker {
     position: absolute;
     width: 100%;
     height: 100%;
-    background-color: rgba(0,0,0,0.5);
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 #instructions {
-    width: 100%;
-    height: 100%;
-
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-
     text-align: center;
-    font-size: 14px;
     cursor: pointer;
 }
+
+#instructions p {
+    font-size: 48px;
+    margin-bottom: 5px;
+}
+
+#instructions span {
+    font-size: 22px;
+}
+
+/* === HUD STYLES (EISWÜSTE) === */
+
+/* Timer oben in der Mitte */
+#timer-container {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(43, 45, 66, 0.6); /* Dunkles, kaltes Blau-Grau */
+    padding: 5px 20px;
+    border: 2px solid #8D99AE; /* Stahlgrauer Rand */
+}
+
+#timer {
+    font-size: 3em;
+    color: #A8DADC; /* Eisblau */
+}
+
+/* Haupt-HUD-Container am unteren Rand */
+#hud {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    padding: 20px;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+/* Container für Leben (links) und Waffe/Ammo (rechts) */
+#health-container, #weapon-display, #ammo-container {
+    background-color: rgba(43, 45, 66, 0.6); /* Dunkles, kaltes Blau-Grau */
+    padding: 10px 15px;
+    border: 2px solid #8D99AE; /* Stahlgrauer Rand */
+    display: flex;
+    align-items: center;
+}
+
+#health-display {
+    font-size: 3em;
+    color: #A8DADC; /* Eisblau */
+    margin-left: 10px;
+}
+
+/* Container für Waffe & Munition (rechts) */
+#weapon-ammo-container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px; /* Abstand zwischen den Boxen */
+}
+
+#weapon-name {
+    font-size: 2em;
+    margin-left: 10px;
+}
+
+#current-ammo {
+    font-size: 3em;
+    color: #E0E0E0; /* Weiß-Grau */
+}
+
+#magazine-count {
+    font-size: 2em;
+    color: #8D99AE; /* Stahlgrau */
+    margin-left: 5px;
+}
+
+#health-icon, #weapon-icon {
+    font-size: 2.5em;
+}
+
+/* Fadenkreuz */
+#crosshair-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px;
+    height: 4px;
+     cursor: default;
+      user-select: none;
+}
+
+.crosshair-line {
+    position: absolute;
+    background-color: rgba(255, 255, 255, 0.9);
+    transition: all 0.1s ease-out;
+}
+
+#crosshair-top {
+    width: 2px;
+    height: 10px;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+#crosshair-bottom {
+    width: 2px;
+    height: 10px;
+    bottom: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+#crosshair-left {
+    width: 10px;
+    height: 2px;
+    left: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+#crosshair-right {
+    width: 10px;
+    height: 2px;
+    right: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+/* Fadenkreuz-Animation */
+#crosshair-container.recoiling #crosshair-top { top: -18px; }
+#crosshair-container.recoiling #crosshair-bottom { bottom: -18px; }
+#crosshair-container.recoiling #crosshair-left { left: -18px; }
+#crosshair-container.recoiling #crosshair-right { right: -18px; }
